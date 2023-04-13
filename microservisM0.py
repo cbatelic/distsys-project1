@@ -54,9 +54,6 @@ async def fillBase():
             if x == 10000:
                 return
 
-
-# asyncio.run(checkBase())
-
 app = web.Application()
 
 app.router.add_routes(routes)
