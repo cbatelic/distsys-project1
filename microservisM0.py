@@ -1,63 +1,74 @@
-import aiohttp
-import asyncio
 import aiosqlite
-import aiofiles
-import json
-from aiohttp  import web
+import asyncio
+from aiohttp import web
+
+import pandas as pd
 
 routes = web.RouteTableDef()
+print("Checking data...") 
 
-@routes.get("/m")
-async def getM(req):
-    try:
-        response = {
-            "data": [],
-        }
-
-        async with aiosqlite.connect("database.db") as db:
-            async with db.execute("SELECT * FROM podaci LIMIT 100") as cur:
-                async for row in cur:
-                    data = {'username': row[0], 'ghlink': row[1], 'filename': row[2], 'content': row[3]}
-                    response["data"].append(data)
-            await db.commit()
-
-        return web.json_response(response)
-    except Exception as e:
-        return web.json_response({"M0": "error", "response": str(e)}, status=500)
-
-async def checkBase():
-    async with aiosqlite.connect("database.db") as db:  # provjera
-        async with db.execute("SELECT COUNT(*) FROM podaci") as cur:
-            count = await cur.fetchone()
-            if count[0] == 0:
-                print("U bazi nema elemenata")
-                await fillBase()
+df = pd.read_json("fakeData.json", lines=True, nrows=10000)
 
 async def fillBase():
-    async with aiofiles.open("fakeData.json", mode="r") as file:
-        x = 0
-        async for row in file: #popunjavanje
-            data = json.loads(row)
-            repo_name = data["repo_name"]
-            username, _ = repo_name.split("/")
-            ghlink = f"https://github.com/{repo_name}"
-            path = data["path"]
-            filename = path.split("/")[-1]
-            content = data["content"]
-            async with aiosqlite.connect("database.db") as db:
-                await db.execute(
-                    "INSERT INTO podaci (username,ghlink,filename,content) VALUES (?,?,?,?)",
-                    (username, ghlink, filename, content)
-                )
+    try:
+        async with aiosqlite.connect("database.db") as db:
+            for _, row in df.iterrows():
+                    username = row["repo_name"].split("/")[0]
+                    repo = row["repo_name"]
+                    path = row["path"]
+                    size = row["size"]
+                    line_max = row["line_max"]
+                    copies = row["copies"]
+                        
+                    await db.execute("CREATE TABLE IF NOT EXISTS data(username,repo,path,size,line_max,copies)")
+                    await db.execute("INSERT INTO data (username,repo,path,size,line_max,copies) VALUES (?,?,?,?,?,?)", (username,repo,path,size,line_max,copies))    
+            await db.commit()
+        return "Successfully filled the database!"
+    except Exception as e:
+        return "ERROR: ", str(e)
+
+async def checkBase():
+    async with aiosqlite.connect("database.db") as db:
+        async with db.execute("SELECT COUNT(*) FROM sqlite_schema;") as cur:
+            async for row in cur:
+                if(row[0] == 0):
+                    print("Database is empty, filling...")
+                    re = await fillBase()
+                    return re
+            await db.commit()
+        return "Database is already filled!"
+
+check_db = asyncio.run(checkBase())
+print(check_db)
+
+@routes.get("/m")
+async def getM(request):
+    try:    
+        res = []
+        resDict = {}
+        async with aiosqlite.connect("database.db") as db:
+            async with db.execute("SELECT * FROM data LIMIT 100;") as cur:
+                async for row in cur:
+                    if(row[0] == 0):
+                        return "Database is empty!"
+                    
+                    colNames = tuple(map(lambda x: x[0], cur.description))
+                    namesAndRows = colNames + row
+                    resDict.update({namesAndRows[0]:namesAndRows[6]})
+                    resDict.update({namesAndRows[1]:namesAndRows[7]})
+                    resDict.update({namesAndRows[2]:namesAndRows[8]})
+                    resDict.update({namesAndRows[3]:namesAndRows[9]})
+                    resDict.update({namesAndRows[4]:namesAndRows[10]})
+                    resDict.update({namesAndRows[5]:namesAndRows[11]})
+                    res.append(resDict.copy())
                 await db.commit()
-            x += 1
-            if x == 10000:
-                return
+                assert isinstance(res,list) and all([isinstance(resDict, dict) for resDict in res])
+        return web.json_response({"status":"ok", "data":res}, status=200)
+    except Exception as e:
+        return web.json_response({"status":"error", "response":e}, status=500)
 
 app = web.Application()
 
 app.router.add_routes(routes)
 
 web.run_app(app, port=5000)
-
-

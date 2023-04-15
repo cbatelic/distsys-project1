@@ -9,7 +9,7 @@ async def getStart(request):
     try:
         resDict = {}    
         async with aiohttp.ClientSession() as session:
-            task = asyncio.create_task(session.get("http://localhost:7000/m"))
+            task = asyncio.create_task(session.get("http://localhost:5000/m"))
             data = await asyncio.gather(task)
             data = [await x.json() for x in data]
             data = data[0]
@@ -20,7 +20,7 @@ async def getStart(request):
             
             assert isinstance(resDict, dict)
             
-            async with session.post("http://localhost:5002/passdata", json = resDict) as res:
+            async with session.post("http://localhost:5002/pass", json = resDict) as res:
                 result = await res.json()
         return web.json_response(result, status=200)
     except Exception as e:
@@ -32,3 +32,4 @@ app = web.Application()
 app.router.add_routes(routes)
 
 web.run_app(app, port=5001)
+
